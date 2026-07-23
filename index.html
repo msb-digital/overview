@@ -217,13 +217,14 @@
             return 'var(--color-default)';
         }
 
-        // ==========================================
+// ==========================================
         // DATA FETCHING & RENDERING (PAPA PARSE)
         // ==========================================
         function fetchSheetData() {
             Papa.parse(CSV_URL, {
                 download: true,
                 header: true, // Uses your first row as headers
+                skipEmptyLines: true, // Automatically ignores blank rows
                 complete: function(results) {
                     const rows = results.data;
                     
@@ -236,15 +237,17 @@
                     loadingMsg.style.display = 'none';
 
                     rows.forEach(row => {
-                        // Sometimes the 'Name' column is labeled '!D' in your sheet
-                        const rawName = row['Name'] || row['!D']; 
+                        // BULLETPROOF NAME GRABBER: 
+                        // Gets the exact keys (headers) PapaParse found, and forces it to use the very first column for the Name, ignoring spelling.
+                        const headers = Object.keys(row);
+                        const rawName = row['Name'] || row['!D'] || row[headers[0]]; 
                         
-                        // Skip empty rows at the bottom of the sheet
-                        if (!rawName) return; 
+                        // Skip if there's somehow no name data
+                        if (!rawName || cleanData(rawName) === '-') return; 
 
                         const cardData = {
                             name: cleanData(rawName),
-                            id: cleanData(row['ID']), 
+                            id: cleanData(row['ID'] || row[headers[2]]), // Fallback to 3rd column if "ID" header fails
                             type: cleanData(row['Type']),
                             platform: cleanData(row['Platform']),
                             appPage: processLink(row['Application Page']),
@@ -268,7 +271,6 @@
                 }
             });
         }
-
         function renderCard(data) {
             const card = document.createElement('div');
             card.className = 'card';
