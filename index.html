@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Property Map</title>
+    <!-- PapaParse Library for reading CSV files -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <style>
+        /* CSS Variables for Card Colors */
+        :root {
+            --color-resource: #f8e6d0;
+            --color-program: #d3e1f1;
+            --color-project: #e6d2dc;
+            --color-center: #dce9d5;
+            --color-office: #d8d2e7;
+            --color-default: #ffffff;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+        }
+
+        header {
+            max-width: 1200px;
+            margin: 0 auto 30px auto;
+            text-align: center;
+        }
+
+        h1 {
+            margin-bottom: 20px;
+            color: #2c3e50;
+        }
+
+        /* Search Bar Styling */
+        #searchBar {
+            width: 100%;
+            max-width: 600px;
+            padding: 12px 20px;
+            font-size: 16px;
+            border: 1px solid #ccc;
+            border-radius: 25px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            outline: none;
+            transition: box-shadow 0.3s ease;
+        }
+
+        #searchBar:focus {
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+            border-color: #007bff;
+        }
+
+        /* Responsive Grid Layout */
+        #cardContainer {
+            display: grid;
+            grid-template-columns: 1fr; /* Mobile: 1 column */
+            gap: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        @media (min-width: 768px) {
+            #cardContainer {
+                grid-template-columns: repeat(3, 1fr); /* Desktop: 3 columns */
+            }
+        }
+
+        /* Profile Card Styling */
+        .card {
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid rgba(0,0,0,0.1);
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 15px rgba(0,0,0,0.1);
+        }
+
+        .card-title {
+            font-size: 1.25rem;
+            font-weight: bold;
+            margin: 0 0 10px 0;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(0,0,0,0.1);
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            background: rgba(255,255,255,0.6);
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+
+        .card-field {
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+
+        .card-field strong {
+            color: #555;
+        }
+
+        a {
+            color: #0056b3;
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid rgba(0,0,0,0.1);
+            text-align: center;
+        }
+
+        .metric-box {
+            background: rgba(255,255,255,0.5);
+            padding: 8px;
+            border-radius: 8px;
+        }
+
+        .metric-box span {
+            display: block;
+            font-size: 0.75rem;
+            color: #666;
+            text-transform: uppercase;
+        }
+
+        .metric-box strong {
+            font-size: 1rem;
+            color: #222;
+        }
+        
+        .loading {
+            text-align: center;
+            font-size: 1.2rem;
+            color: #666;
+            margin-top: 50px;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>MSB Web Property Map</h1>
+        <input type="text" id="searchBar" placeholder="Search by name, contact, CMS, type...">
+    </header>
+
+    <main id="cardContainer">
+        <div class="loading" id="loadingMsg">Fetching data from Google Sheets...</div>
+    </main>
+
+    <script>
+        // ==========================================
+        // CONFIGURATION
+        // ==========================================
+        // Paste your generated "Publish to web" CSV link below:
+        const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT0g4ll0UHBHAC8ylqgGGVMNibD6v_c8i_xBWcC2SxFHWjSH6Q39cIf8O0AN8RZMEJDdiCdcLsldWFw/pub?gid=324318012&single=true&output=csv'; 
+
+        const cardContainer = document.getElementById('cardContainer');
+        const searchBar = document.getElementById('searchBar');
+        const loadingMsg = document.getElementById('loadingMsg');
+        let allCardsData = [];
+
+        // ==========================================
+        // UTILITY FUNCTIONS
+        // ==========================================
+        
+        // Clean missing or non-standard characters
+        function cleanData(val) {
+            if (!val) return '-';
+            const trimmed = val.trim();
+            if (trimmed === '' || trimmed === '?' || trimmed.toLowerCase() === 'n/a') {
+                return '-';
+            }
+            return trimmed;
+        }
+
+        // Process URL fields: wrap in <a> tag if starts with http, otherwise return text
+        function processLink(val) {
+            const cleaned = cleanData(val);
+            if (cleaned === '-') return cleaned;
+            if (cleaned.toLowerCase().startsWith('http')) {
+                return `<a href="${cleaned}" target="_blank">View Link</a>`;
+            }
+            return cleaned;
+        }
+
+        // Determine card color based on Type
+        function getCardColor(type) {
+            const normalizedType = type.toLowerCase();
+            if (normalizedType.includes('resource')) return 'var(--color-resource)';
+            if (normalizedType.includes('program')) return 'var(--color-program)';
+            if (normalizedType.includes('project')) return 'var(--color-project)';
+            if (normalizedType.includes('center')) return 'var(--color-center)';
+            if (normalizedType.includes('office')) return 'var(--color-office)';
+            return 'var(--color-default)';
+        }
+
+        // ==========================================
+        // DATA FETCHING & RENDERING (PAPA PARSE)
+        // ==========================================
+        function fetchSheetData() {
+            Papa.parse(CSV_URL, {
+                download: true,
+                header: true, // Uses your first row as headers
+                complete: function(results) {
+                    const rows = results.data;
+                    
+                    if (!rows || rows.length === 0) {
+                        loadingMsg.innerText = "No data found in the spreadsheet.";
+                        return;
+                    }
+
+                    // Remove loading message
+                    loadingMsg.style.display = 'none';
+
+                    rows.forEach(row => {
+                        // Sometimes the 'Name' column is labeled '!D' in your sheet
+                        const rawName = row['Name'] || row['!D']; 
+                        
+                        // Skip empty rows at the bottom of the sheet
+                        if (!rawName) return; 
+
+                        const cardData = {
+                            name: cleanData(rawName),
+                            id: cleanData(row['ID']), 
+                            type: cleanData(row['Type']),
+                            platform: cleanData(row['Platform']),
+                            appPage: processLink(row['Application Page']),
+                            rfiPage: processLink(row['RFI or Contact Us Page']),
+                            eventsPage: processLink(row['Events Page']),
+                            poc: cleanData(row['Primary Point of Contact']),
+                            pocEmail: cleanData(row['Primary POC Email']),
+                            cms: cleanData(row['CMS']),
+                            visitors2026: cleanData(row['Total Visitors 2026']),
+                            visitors2025: cleanData(row['Total Visitors 2025']),
+                            visitors2024: cleanData(row['Total Visitors 2024'])
+                        };
+
+                        allCardsData.push(cardData);
+                        renderCard(cardData);
+                    });
+                },
+                error: function(error) {
+                    console.error("Error fetching data:", error);
+                    loadingMsg.innerText = "Error loading data. Please verify your CSV link is public and correct.";
+                }
+            });
+        }
+
+        function renderCard(data) {
+            const card = document.createElement('div');
+            card.className = 'card';
+            card.style.backgroundColor = getCardColor(data.type);
+            
+            // Create a hidden string containing all data for the omni-search
+            const searchableText = Object.values(data).join(' ').toLowerCase();
+            card.setAttribute('data-search', searchableText);
+
+            card.innerHTML = `
+                <h2 class="card-title">${data.name}</h2>
+                <div>
+                    <span class="badge">Type: ${data.type}</span>
+                    <span class="badge">ID: ${data.id}</span>
+                </div>
+                
+                <div class="card-field"><strong>Platform:</strong> ${data.platform}</div>
+                <div class="card-field"><strong>CMS:</strong> ${data.cms}</div>
+                <div class="card-field"><strong>App Page:</strong> ${data.appPage}</div>
+                <div class="card-field"><strong>RFI / Contact:</strong> ${data.rfiPage}</div>
+                <div class="card-field"><strong>Events Page:</strong> ${data.eventsPage}</div>
+                <div class="card-field"><strong>Primary POC:</strong> ${data.poc}</div>
+                <div class="card-field"><strong>POC Email:</strong> ${data.pocEmail}</div>
+                
+                <div class="metrics-grid">
+                    <div class="metric-box">
+                        <span>2026 Visitors</span>
+                        <strong>${data.visitors2026}</strong>
+                    </div>
+                    <div class="metric-box">
+                        <span>2025 Visitors</span>
+                        <strong>${data.visitors2025}</strong>
+                    </div>
+                    <div class="metric-box">
+                        <span>2024 Visitors</span>
+                        <strong>${data.visitors2024}</strong>
+                    </div>
+                </div>
+            `;
+            
+            cardContainer.appendChild(card);
+        }
+
+        // ==========================================
+        // SEARCH FUNCTIONALITY
+        // ==========================================
+        searchBar.addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase();
+            const cards = document.querySelectorAll('.card');
+            
+            cards.forEach(card => {
+                const cardData = card.getAttribute('data-search');
+                if (cardData.includes(query)) {
+                    card.style.display = 'flex';
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+        });
+
+        // Initialize the app
+        fetchSheetData();
+    </script>
+</body>
+</html>
