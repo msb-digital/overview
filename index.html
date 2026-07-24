@@ -47,11 +47,53 @@
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             outline: none;
             transition: box-shadow 0.3s ease;
+            margin-bottom: 20px;
         }
 
         #searchBar:focus {
             box-shadow: 0 4px 8px rgba(0,0,0,0.15);
             border-color: #007bff;
+        }
+
+        /* Filter Toggles Styling */
+        .filter-container {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .filter-btn {
+            background: #ffffff;
+            border: 1px solid #ccc;
+            padding: 8px 16px;
+            border-radius: 25px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.95rem;
+            transition: all 0.2s ease;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+
+        .filter-btn:hover {
+            background: #f0f0f0;
+        }
+
+        .filter-btn.active {
+            border-color: #333;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+            font-weight: 600;
+            background: #f9f9f9;
+        }
+
+        .filter-dot {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            border: 1px solid rgba(0,0,0,0.1);
         }
 
         /* Responsive Grid Layout */
@@ -78,6 +120,7 @@
             display: flex;
             flex-direction: column;
             border: 1px solid rgba(0,0,0,0.1);
+            position: relative; /* Allows absolute positioning for ID badge */
         }
 
         .card:hover {
@@ -85,12 +128,43 @@
             box-shadow: 0 8px 15px rgba(0,0,0,0.1);
         }
 
+        .id-badge {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: rgba(255, 255, 255, 0.7);
+            color: #333;
+            font-weight: 700;
+            font-size: 1.1rem;
+            padding: 6px 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(0,0,0,0.05);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
         .card-title {
             font-size: 1.25rem;
             font-weight: bold;
-            margin: 0 0 10px 0;
-            padding-bottom: 10px;
+            margin: 0 0 5px 0;
+            padding-right: 40px; /* Prevents title from overlapping ID */
+        }
+
+        .card-title a {
+            color: #2c3e50;
+            text-decoration: none;
+        }
+
+        .card-title a:hover {
+            text-decoration: underline;
+            color: #0056b3;
+        }
+
+        .top-level-link {
+            font-size: 0.85rem;
+            margin-bottom: 12px;
+            padding-bottom: 12px;
             border-bottom: 1px solid rgba(0,0,0,0.1);
+            word-break: break-all;
         }
 
         .badge {
@@ -164,6 +238,25 @@
     <header>
         <h1>MSB Web Property Map</h1>
         <input type="text" id="searchBar" placeholder="Search by name, contact, CMS, type...">
+        
+        <!-- Interactive Filter Toggles -->
+        <div class="filter-container" id="filterContainer">
+            <button class="filter-btn" data-type="resource">
+                <span class="filter-dot" style="background: var(--color-resource)"></span> Resource
+            </button>
+            <button class="filter-btn" data-type="program">
+                <span class="filter-dot" style="background: var(--color-program)"></span> Program
+            </button>
+            <button class="filter-btn" data-type="project">
+                <span class="filter-dot" style="background: var(--color-project)"></span> Project
+            </button>
+            <button class="filter-btn" data-type="center">
+                <span class="filter-dot" style="background: var(--color-center)"></span> Center
+            </button>
+            <button class="filter-btn" data-type="office">
+                <span class="filter-dot" style="background: var(--color-office)"></span> Office
+            </button>
+        </div>
     </header>
 
     <main id="cardContainer">
@@ -174,19 +267,20 @@
         // ==========================================
         // CONFIGURATION
         // ==========================================
-        // Paste your generated "Publish to web" CSV link below:
         const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSZg361Cm5f7REkNglbi1VC8dnXTkfohvkfw4hlGtcAADuUlVP0iyVopPSOkDJExhvQO2sjNnKMI6Hb/pub?gid=324318012&single=true&output=csv'; 
 
         const cardContainer = document.getElementById('cardContainer');
         const searchBar = document.getElementById('searchBar');
+        const filterBtns = document.querySelectorAll('.filter-btn');
         const loadingMsg = document.getElementById('loadingMsg');
+        
         let allCardsData = [];
+        let activeFilters = new Set(); // Tracks which toggle buttons are active
 
         // ==========================================
         // UTILITY FUNCTIONS
         // ==========================================
         
-        // Clean missing or non-standard characters
         function cleanData(val) {
             if (!val) return '-';
             const trimmed = val.trim();
@@ -196,7 +290,6 @@
             return trimmed;
         }
 
-        // Process URL fields: wrap in <a> tag if starts with http, otherwise return text
         function processLink(val) {
             const cleaned = cleanData(val);
             if (cleaned === '-') return cleaned;
@@ -206,7 +299,7 @@
             return cleaned;
         }
 
-        // Determine card color based on Type
+        // Returns color based on type
         function getCardColor(type) {
             const normalizedType = type.toLowerCase();
             if (normalizedType.includes('resource')) return 'var(--color-resource)';
@@ -217,14 +310,25 @@
             return 'var(--color-default)';
         }
 
-// ==========================================
+        // Returns base type string for filtering logic
+        function getBaseType(type) {
+            const normalizedType = type.toLowerCase();
+            if (normalizedType.includes('resource')) return 'resource';
+            if (normalizedType.includes('program')) return 'program';
+            if (normalizedType.includes('project')) return 'project';
+            if (normalizedType.includes('center')) return 'center';
+            if (normalizedType.includes('office')) return 'office';
+            return 'other';
+        }
+
+        // ==========================================
         // DATA FETCHING & RENDERING (PAPA PARSE)
         // ==========================================
         function fetchSheetData() {
             Papa.parse(CSV_URL, {
                 download: true,
-                header: true, // Uses your first row as headers
-                skipEmptyLines: true, // Automatically ignores blank rows
+                header: true, 
+                skipEmptyLines: true, 
                 complete: function(results) {
                     const rows = results.data;
                     
@@ -233,22 +337,20 @@
                         return;
                     }
 
-                    // Remove loading message
                     loadingMsg.style.display = 'none';
 
                     rows.forEach(row => {
-                        // BULLETPROOF NAME GRABBER: 
-                        // Gets the exact keys (headers) PapaParse found, and forces it to use the very first column for the Name, ignoring spelling.
                         const headers = Object.keys(row);
                         const rawName = row['Name'] || row['!D'] || row[headers[0]]; 
                         
-                        // Skip if there's somehow no name data
                         if (!rawName || cleanData(rawName) === '-') return; 
 
                         const cardData = {
                             name: cleanData(rawName),
-                            id: cleanData(row['ID'] || row[headers[2]]), // Fallback to 3rd column if "ID" header fails
+                            id: cleanData(row['ID'] || row[headers[2]]), 
                             type: cleanData(row['Type']),
+                            baseType: getBaseType(cleanData(row['Type'])), // Used for toggle filters
+                            topLevelUrl: cleanData(row['Top-level Webpage']),
                             platform: cleanData(row['Platform']),
                             appPage: processLink(row['Application Page']),
                             rfiPage: processLink(row['RFI or Contact Us Page']),
@@ -271,20 +373,32 @@
                 }
             });
         }
+
         function renderCard(data) {
             const card = document.createElement('div');
             card.className = 'card';
             card.style.backgroundColor = getCardColor(data.type);
             
-            // Create a hidden string containing all data for the omni-search
             const searchableText = Object.values(data).join(' ').toLowerCase();
             card.setAttribute('data-search', searchableText);
+            card.setAttribute('data-card-type', data.baseType);
+
+            // Logic to handle Title and Top-level link
+            const hasValidUrl = data.topLevelUrl !== '-' && data.topLevelUrl.startsWith('http');
+            const titleHtml = hasValidUrl 
+                ? `<a href="${data.topLevelUrl}" target="_blank">${data.name}</a>` 
+                : data.name;
+            const topLinkHtml = hasValidUrl 
+                ? `<a href="${data.topLevelUrl}" target="_blank">${data.topLevelUrl}</a>` 
+                : `<em>No top-level URL provided</em>`;
 
             card.innerHTML = `
-                <h2 class="card-title">${data.name}</h2>
+                ${data.id !== '-' ? `<div class="id-badge">${data.id}</div>` : ''}
+                <h2 class="card-title">${titleHtml}</h2>
+                <div class="top-level-link">${topLinkHtml}</div>
+
                 <div>
                     <span class="badge">Type: ${data.type}</span>
-                    <span class="badge">ID: ${data.id}</span>
                 </div>
                 
                 <div class="card-field"><strong>Platform:</strong> ${data.platform}</div>
@@ -315,19 +429,45 @@
         }
 
         // ==========================================
-        // SEARCH FUNCTIONALITY
+        // SEARCH & FILTER FUNCTIONALITY
         // ==========================================
-        searchBar.addEventListener('input', (e) => {
-            const query = e.target.value.toLowerCase();
+        
+        // Master filter function handles BOTH search text and toggle buttons
+        function filterCards() {
+            const query = searchBar.value.toLowerCase();
             const cards = document.querySelectorAll('.card');
             
             cards.forEach(card => {
-                const cardData = card.getAttribute('data-search');
-                if (cardData.includes(query)) {
+                const searchData = card.getAttribute('data-search');
+                const cardType = card.getAttribute('data-card-type');
+                
+                const matchesSearch = searchData.includes(query);
+                const matchesType = activeFilters.size === 0 || activeFilters.has(cardType);
+
+                if (matchesSearch && matchesType) {
                     card.style.display = 'flex';
                 } else {
                     card.style.display = 'none';
                 }
+            });
+        }
+
+        // Event Listeners
+        searchBar.addEventListener('input', filterCards);
+
+        filterBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const type = btn.getAttribute('data-type');
+                
+                if (activeFilters.has(type)) {
+                    activeFilters.delete(type);
+                    btn.classList.remove('active');
+                } else {
+                    activeFilters.add(type);
+                    btn.classList.add('active');
+                }
+                
+                filterCards();
             });
         });
 
