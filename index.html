@@ -169,6 +169,17 @@
             border: 1px solid rgba(0,0,0,0.05);
         }
 
+        /* Interactive Type Toggle Styling */
+        .type-toggle {
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .type-toggle:hover {
+            box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+            transform: translateY(-1px);
+        }
+
         .card-field {
             margin-bottom: 8px;
             font-size: 0.9rem;
@@ -179,8 +190,8 @@
             color: #555;
         }
 
-        /* CMS Toggle Styling */
-        .cms-toggle {
+        /* CMS and Partner Toggle Styling */
+        .cms-toggle, .partner-toggle {
             color: #0056b3;
             font-weight: 600;
             cursor: pointer;
@@ -191,11 +202,11 @@
             display: inline-block;
         }
 
-        .cms-toggle:hover {
+        .cms-toggle:hover, .partner-toggle:hover {
             background-color: rgba(0, 86, 179, 0.1);
         }
 
-        .cms-toggle.active-filter {
+        .cms-toggle.active-filter, .partner-toggle.active-filter {
             background-color: #0056b3;
             color: #ffffff;
             text-decoration: none;
@@ -291,6 +302,7 @@
         let allCardsData = [];
         let activeFilters = new Set(); // Tracks active Type toggle buttons
         let activeCmsFilter = null; // Tracks active CMS click filter
+        let activePartnerFilter = null; // Tracks active Partner click filter
 
         // ==========================================
         // UTILITY FUNCTIONS
@@ -303,15 +315,6 @@
                 return '-';
             }
             return trimmed;
-        }
-
-        function processLink(val) {
-            const cleaned = cleanData(val);
-            if (cleaned === '-') return cleaned;
-            if (cleaned.toLowerCase().startsWith('http')) {
-                return `<a href="${cleaned}" target="_blank">View Link</a>`;
-            }
-            return cleaned;
         }
 
         function getCardColor(type) {
@@ -332,6 +335,15 @@
             if (normalizedType.includes('center')) return 'center';
             if (normalizedType.includes('office')) return 'office';
             return 'other';
+        }
+
+        // Formats links cleanly by wrapping the label itself if a URL exists
+        function renderFieldLink(label, val) {
+            if (val === '-') return `<div class="card-field"><strong>${label}:</strong> -</div>`;
+            if (val.toLowerCase().startsWith('http')) {
+                return `<div class="card-field"><a href="${val}" target="_blank"><strong>${label}</strong></a></div>`;
+            }
+            return `<div class="card-field"><strong>${label}:</strong> ${val}</div>`;
         }
 
         // ==========================================
@@ -365,11 +377,12 @@
                             baseType: getBaseType(cleanData(row['Type'])), 
                             topLevelUrl: cleanData(row['Top-level Webpage']),
                             platform: cleanData(row['Platform']),
-                            appPage: processLink(row['Application Page']),
-                            rfiPage: processLink(row['RFI or Contact Us Page']),
-                            eventsPage: processLink(row['Events Page']),
+                            appPageRaw: cleanData(row['Application Page']),
+                            rfiPageRaw: cleanData(row['RFI or Contact Us Page']),
+                            eventsPageRaw: cleanData(row['Events Page']),
                             poc: cleanData(row['Primary Point of Contact']),
                             pocEmail: cleanData(row['Primary POC Email']),
+                            partners: cleanData(row['Ext. Marketing Partners 2025']), // Pulled from spreadsheet[cite: 1]
                             cms: cleanData(row['CMS']),
                             visitors2026: cleanData(row['Total Visitors 2026']),
                             visitors2025: cleanData(row['Total Visitors 2025']),
@@ -395,7 +408,8 @@
             const searchableText = Object.values(data).join(' ').toLowerCase();
             card.setAttribute('data-search', searchableText);
             card.setAttribute('data-card-type', data.baseType);
-            card.setAttribute('data-cms', data.cms); // Used for exact CMS matching
+            card.setAttribute('data-cms', data.cms); 
+            card.setAttribute('data-partners', data.partners); 
 
             const hasValidUrl = data.topLevelUrl !== '-' && data.topLevelUrl.startsWith('http');
             const titleHtml = hasValidUrl 
@@ -411,22 +425,27 @@
                 <div class="top-level-link">${topLinkHtml}</div>
 
                 <div>
-                    <span class="badge">${data.type}</span>
+                    <span class="badge type-toggle" data-type="${data.baseType}" title="Click to toggle this Type filter">${data.type}</span>
                 </div>
                 
                 <div class="card-field"><strong>Platform:</strong> ${data.platform}</div>
                 
-                <!-- Added cms-toggle class for clicking -->
                 <div class="card-field">
                     <strong>CMS:</strong> 
                     <span class="cms-toggle" title="Click to show only cards with this CMS">${data.cms}</span>
                 </div>
                 
-                <div class="card-field"><strong>App Page:</strong> ${data.appPage}</div>
-                <div class="card-field"><strong>RFI / Contact:</strong> ${data.rfiPage}</div>
-                <div class="card-field"><strong>Events Page:</strong> ${data.eventsPage}</div>
+                ${renderFieldLink('App Page', data.appPageRaw)}
+                ${renderFieldLink('RFI / Contact', data.rfiPageRaw)}
+                ${renderFieldLink('Events Page', data.eventsPageRaw)}
+
                 <div class="card-field"><strong>Primary POC:</strong> ${data.poc}</div>
                 <div class="card-field"><strong>POC Email:</strong> ${data.pocEmail}</div>
+                
+                <div class="card-field">
+                    <strong>Partners:</strong> 
+                    <span class="partner-toggle" title="Click to show only cards with this Partner">${data.partners}</span>
+                </div>
                 
                 <div class="metrics-grid">
                     <div class="metric-box">
@@ -459,13 +478,14 @@
                 const searchData = card.getAttribute('data-search');
                 const cardType = card.getAttribute('data-card-type');
                 const cardCms = card.getAttribute('data-cms');
+                const cardPartner = card.getAttribute('data-partners');
                 
                 const matchesSearch = searchData.includes(query);
                 const matchesType = activeFilters.size === 0 || activeFilters.has(cardType);
-                // CMS matching check
                 const matchesCms = !activeCmsFilter || cardCms === activeCmsFilter;
+                const matchesPartner = !activePartnerFilter || cardPartner === activePartnerFilter;
 
-                if (matchesSearch && matchesType && matchesCms) {
+                if (matchesSearch && matchesType && matchesCms && matchesPartner) {
                     card.style.display = 'flex';
                 } else {
                     card.style.display = 'none';
@@ -476,36 +496,46 @@
         // Search Bar Event Listener
         searchBar.addEventListener('input', filterCards);
 
-        // Type Button Event Listeners
+        // Helper function to sync top buttons visually
+        function syncTopButtons() {
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                const btnType = btn.getAttribute('data-type');
+                if (activeFilters.has(btnType)) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+        }
+
+        // Type Button (Header) Event Listeners
         filterBtns.forEach(btn => {
             btn.addEventListener('click', () => {
                 const type = btn.getAttribute('data-type');
                 
                 if (activeFilters.has(type)) {
                     activeFilters.delete(type);
-                    btn.classList.remove('active');
                 } else {
                     activeFilters.add(type);
-                    btn.classList.add('active');
                 }
                 
+                syncTopButtons();
                 filterCards();
             });
         });
 
-        // CMS Toggle Event Listener (Using Event Delegation on the container)
+        // Event Delegation for Clicks INSIDE the cards
         cardContainer.addEventListener('click', (e) => {
+            // 1. CMS Toggle Logic
             if (e.target.classList.contains('cms-toggle')) {
                 const clickedCms = e.target.innerText;
                 
-                // Toggle off if clicking the currently active filter, otherwise toggle on
                 if (activeCmsFilter === clickedCms) {
                     activeCmsFilter = null;
                 } else {
                     activeCmsFilter = clickedCms;
                 }
                 
-                // Update styling of all CMS tags visually across all cards
                 document.querySelectorAll('.cms-toggle').forEach(el => {
                     if (activeCmsFilter && el.innerText === activeCmsFilter) {
                         el.classList.add('active-filter');
@@ -514,6 +544,41 @@
                     }
                 });
 
+                filterCards();
+            }
+
+            // 2. Partner Toggle Logic
+            if (e.target.classList.contains('partner-toggle')) {
+                const clickedPartner = e.target.innerText;
+                
+                if (activePartnerFilter === clickedPartner) {
+                    activePartnerFilter = null;
+                } else {
+                    activePartnerFilter = clickedPartner;
+                }
+                
+                document.querySelectorAll('.partner-toggle').forEach(el => {
+                    if (activePartnerFilter && el.innerText === activePartnerFilter) {
+                        el.classList.add('active-filter');
+                    } else {
+                        el.classList.remove('active-filter');
+                    }
+                });
+
+                filterCards();
+            }
+
+            // 3. Type Badge Toggle Logic
+            if (e.target.classList.contains('type-toggle')) {
+                const clickedType = e.target.getAttribute('data-type');
+                
+                if (activeFilters.has(clickedType)) {
+                    activeFilters.delete(clickedType);
+                } else {
+                    activeFilters.add(clickedType);
+                }
+                
+                syncTopButtons();
                 filterCards();
             }
         });
